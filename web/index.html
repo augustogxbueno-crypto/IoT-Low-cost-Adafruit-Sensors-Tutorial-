@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sensor Tutorial Series</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-top">
+      <div>
+        <h1 id="sensor-name">Sensor —</h1>
+        <p id="sensor-type" class="subtitle">Waiting for connection...</p>
+      </div>
+      <button id="btn-connect" class="btn btn-outline">Connect via USB</button>
+    </div>
+  </header>
+
+  <main id="app" class="hidden">
+
+    <!-- ═══ Measurement Mode (tabs built from info.modes) ═══ -->
+    <section class="card">
+      <h2>Measurement Mode</h2>
+      <div id="mode-tabs" class="mode-tabs"></div>
+
+      <!-- LED control — shape depends on info.led.internal.type -->
+      <div id="panel-led" class="form-group conditional hidden"></div>
+
+      <!-- Log vs Raw submode — only for modes that support a reference -->
+      <div id="panel-submode" class="form-group conditional hidden">
+        <label>Measurement Type</label>
+        <div class="submode-tabs">
+          <button class="submode-tab active" data-sub="log">With Reference (−log₁₀ I/I₀)</button>
+          <button class="submode-tab" data-sub="raw">Raw (sensor raw data)</button>
+        </div>
+      </div>
+
+      <div id="panel-ref" class="form-group conditional hidden">
+        <button id="btn-ref" class="btn btn-outline">Measure Reference</button>
+        <span id="ref-status" class="ref-status hidden">✓ Reference saved</span>
+      </div>
+    </section>
+
+    <!-- ═══ Sensor Configuration (gain + integration time) ═══ -->
+    <section class="card">
+      <h2>Sensor Configuration</h2>
+
+      <div id="panel-gain" class="form-group"></div>
+      <div id="panel-time" class="form-group"></div>
+      <div id="panel-extras"></div>
+
+      <p id="time-hint" class="hint"></p>
+      <div class="tint-display">
+        Current integration time: <strong id="tint-value">—</strong>
+      </div>
+
+      <button id="btn-apply-config" class="btn btn-primary">Apply Configuration</button>
+    </section>
+
+    <!-- ═══ Channel Selection ═══ -->
+    <section class="card">
+      <h2>Channels</h2>
+      <p class="hint">Select which channels to measure simultaneously.</p>
+      <div id="channel-grid" class="channel-grid"></div>
+    </section>
+
+    <!-- ═══ Measurement ═══ -->
+    <section class="card">
+      <h2>Measurement</h2>
+      <button id="btn-measure" class="btn btn-primary">Start Measurement (10s)</button>
+
+      <div id="progress-area" class="progress-area hidden">
+        <div class="spinner"></div>
+        <p id="progress-text">Measuring...</p>
+        <div class="progress-bar-track">
+          <div id="progress-bar" class="progress-bar-fill"></div>
+        </div>
+        <div id="progress-live" class="progress-live"></div>
+      </div>
+    </section>
+
+    <!-- ═══ Results ═══ -->
+    <section class="card">
+      <div class="results-header">
+        <h2>Results</h2>
+        <div class="results-actions">
+          <button id="btn-clear-all" class="btn btn-ghost btn-sm">Clear All</button>
+          <button id="btn-download-csv" class="btn btn-outline btn-sm">Download CSV</button>
+          <button id="btn-download-xlsx" class="btn btn-outline btn-sm">Download Excel</button>
+        </div>
+      </div>
+      <div id="results-table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr id="results-head-row">
+              <th>#</th>
+              <th>Mode</th>
+              <th>Gain</th>
+              <th>Int. Time (ms)</th>
+              <!-- channel columns inserted dynamically -->
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="results-body">
+            <tr><td colspan="10" class="empty-row">No measurements yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast-container"></div>
+
+  <!-- Vendored locally so the page keeps working fully offline (see xlsx.LICENSE.txt) -->
+  <script src="xlsx.core.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+adafruit/Adafruit AS7341 @ ^1.4.2
+adafruit/Adafruit BusIO @ ^1.16.1
+bblanchon/ArduinoJson @ ^6.21.5
