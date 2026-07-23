@@ -78,20 +78,10 @@
   constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 6;
 #endif
 
-constexpr size_t INFO_DOC_CAPACITY =
-    JSON_OBJECT_SIZE(9) +                                                  // top-level fields
-    JSON_ARRAY_SIZE(INFO_MAX_CHANNELS) + INFO_MAX_CHANNELS * JSON_OBJECT_SIZE(3) + // channels[]
-    JSON_ARRAY_SIZE(INFO_MAX_GAINS) +                                       // gain.options[] (discrete)
-    JSON_OBJECT_SIZE(4) +                                                   // gain{}
-    JSON_OBJECT_SIZE(3) +                                                   // led{}
-    JSON_OBJECT_SIZE(4) + JSON_ARRAY_SIZE(INFO_MAX_GAINS) +                 // led.internal{} (+ options[])
-    2 * JSON_OBJECT_SIZE(3) +                                               // led.absorbance / led.fluorescence
-    JSON_OBJECT_SIZE(3) +                                                   // time{}
-    JSON_ARRAY_SIZE(INFO_MAX_TIME_PARAMS) + INFO_MAX_TIME_PARAMS * JSON_OBJECT_SIZE(4) +  // time.params[]
-    JSON_ARRAY_SIZE(INFO_MAX_TIME_PRESETS) +                                // time.presets[]
-    JSON_ARRAY_SIZE(INFO_MAX_EXTRA_PARAMS) +
-    INFO_MAX_EXTRA_PARAMS * (JSON_OBJECT_SIZE(5) + JSON_ARRAY_SIZE(INFO_MAX_EXTRA_OPTS)) + // extraParams[]
-    96; // margin for short literal values
+// NOTE: there used to be an INFO_DOC_CAPACITY here sizing a StaticJsonDocument
+// for the whole "info" response. sendInfo() now streams that response
+// directly to Serial instead (see below) — building it as one in-memory
+// document was what overflowed the stack on RAM-tight sensors like AS7262.
 
 constexpr size_t CMD_DOC_CAPACITY =
     JSON_OBJECT_SIZE(6) + JSON_ARRAY_SIZE(INFO_MAX_CHANNELS) + JSON_OBJECT_SIZE(INFO_MAX_TIME_PARAMS) + 64;
@@ -163,115 +153,158 @@ static void applyLedForMode() {
 // -----------------------------------------------------------------------------
 // "info" — full self-description of the active sensor
 // -----------------------------------------------------------------------------
+// Written directly to Serial instead of built up as one big ArduinoJson
+// StaticJsonDocument. That document (INFO_DOC_CAPACITY) used to peak at
+// 600-850+ stack bytes depending on sensor, alive on the stack at the same
+// time as handleCommand()'s own CMD_DOC_CAPACITY document one frame up —
+// on a 2KB Uno with a sensor library that already eats 1KB+ of static RAM
+// (e.g. AS7262's Adafruit_AS726x), that combination overflowed the stack
+// and corrupted the response mid-transmission instead of failing loudly.
+// Streaming field-by-field keeps this function's own stack use in the tens
+// of bytes regardless of sensor, so it can't be the thing that overflows.
+static void printQuoted(const __FlashStringHelper* s) {
+  Serial.print('"');
+  Serial.print(s);
+  Serial.print('"');
+}
+
 void sendInfo() {
   SensorBase& sensor = SensorManager::get();
-  StaticJsonDocument<INFO_DOC_CAPACITY> doc;
 
-  doc["evt"]        = F("info");
-  doc["sensor"]     = sensor.name();
-  doc["sensorType"] = sensor.sensorType();
+  Serial.print(F("{\"evt\":\"info\",\"sensor\":"));
+  printQuoted(sensor.name());
+  Serial.print(F(",\"sensorType\":"));
+  printQuoted(sensor.sensorType());
 
   // Channels
-  JsonArray channels = doc.createNestedArray("channels");
+  Serial.print(F(",\"channels\":["));
   for (uint8_t i = 0; i < sensor.channelCount(); i++) {
+    if (i) Serial.print(',');
     ChannelInfo ci = sensor.channel(i);
-    JsonObject ch = channels.createNestedObject();
-    ch["id"]    = i;
-    ch["name"]  = ci.name;
-    ch["color"] = ci.color;
+    Serial.print(F("{\"id\":"));
+    Serial.print(i);
+    Serial.print(F(",\"name\":"));
+    printQuoted(ci.name);
+    Serial.print(F(",\"color\":"));
+    printQuoted(ci.color);
+    Serial.print('}');
   }
+  Serial.print(']');
 
   // Modes available: Reflectance only if the sensor can drive its own LED
-  JsonArray modes = doc.createNestedArray("modes");
-  if (sensor.ledType() != LedType::LED_NONE) modes.add(F("reflectance"));
-  modes.add(F("absorbance"));
-  modes.add(F("fluorescence"));
+  Serial.print(F(",\"modes\":["));
+  bool hasReflectance = sensor.ledType() != LedType::LED_NONE;
+  if (hasReflectance) { printQuoted(F("reflectance")); Serial.print(','); }
+  Serial.print(F("\"absorbance\",\"fluorescence\"]"));
 
   // Gain
-  JsonObject gain = doc.createNestedObject("gain");
+  Serial.print(F(",\"gain\":{"));
   if (sensor.gainType() == GainType::GAIN_DISCRETE) {
-    gain["type"] = F("discrete");
-    JsonArray opts = gain.createNestedArray("options");
-    for (uint8_t i = 0; i < sensor.gainOptionCount(); i++) opts.add(sensor.gainOptionLabel(i));
+    Serial.print(F("\"type\":\"discrete\",\"options\":["));
+    for (uint8_t i = 0; i < sensor.gainOptionCount(); i++) {
+      if (i) Serial.print(',');
+      printQuoted(sensor.gainOptionLabel(i));
+    }
+    Serial.print(']');
   } else {
-    gain["type"] = F("continuous");
-    gain["min"]  = sensor.gainContinuousMin();
-    gain["max"]  = sensor.gainContinuousMax();
+    Serial.print(F("\"type\":\"continuous\",\"min\":"));
+    Serial.print(sensor.gainContinuousMin());
+    Serial.print(F(",\"max\":"));
+    Serial.print(sensor.gainContinuousMax());
   }
+  Serial.print('}');
 
   // LED
-  JsonObject led = doc.createNestedObject("led");
-  JsonObject ledInternal = led.createNestedObject("internal");
+  Serial.print(F(",\"led\":{\"internal\":{"));
   switch (sensor.ledType()) {
     case LedType::LED_NONE:
-      ledInternal["type"] = F("none");
+      Serial.print(F("\"type\":\"none\""));
       break;
     case LedType::LED_BINARY:
-      ledInternal["type"] = F("binary");
+      Serial.print(F("\"type\":\"binary\""));
       break;
-    case LedType::LED_DISCRETE: {
-      ledInternal["type"] = F("discrete");
-      JsonArray opts = ledInternal.createNestedArray("options");
-      for (uint8_t i = 0; i < sensor.ledOptionCount(); i++) opts.add(sensor.ledOptionLabel(i));
+    case LedType::LED_DISCRETE:
+      Serial.print(F("\"type\":\"discrete\",\"options\":["));
+      for (uint8_t i = 0; i < sensor.ledOptionCount(); i++) {
+        if (i) Serial.print(',');
+        printQuoted(sensor.ledOptionLabel(i));
+      }
+      Serial.print(']');
       break;
-    }
     case LedType::LED_CONTINUOUS:
-      ledInternal["type"] = F("continuous");
-      ledInternal["minMA"] = sensor.ledMinMA();
-      ledInternal["maxMA"] = sensor.ledMaxMA();
+      Serial.print(F("\"type\":\"continuous\",\"minMA\":"));
+      Serial.print(sensor.ledMinMA());
+      Serial.print(F(",\"maxMA\":"));
+      Serial.print(sensor.ledMaxMA());
       break;
   }
-  JsonObject ledAbs = led.createNestedObject("absorbance");
-  ledAbs["type"]  = F("external");
-  ledAbs["pin"]   = PIN_LED_ABSORBANCE;
-  ledAbs["angle"] = 180;
-  JsonObject ledFlu = led.createNestedObject("fluorescence");
-  ledFlu["type"]  = F("external");
-  ledFlu["pin"]   = PIN_LED_FLUORESCENCE;
-  ledFlu["angle"] = 90;
+  Serial.print(F("},\"absorbance\":{\"type\":\"external\",\"pin\":"));
+  Serial.print(PIN_LED_ABSORBANCE);
+  Serial.print(F(",\"angle\":180},\"fluorescence\":{\"type\":\"external\",\"pin\":"));
+  Serial.print(PIN_LED_FLUORESCENCE);
+  Serial.print(F(",\"angle\":90}}"));
 
   // Integration time
-  JsonObject time = doc.createNestedObject("time");
-  time["currentMs"] = sensor.integrationTimeMs();
-  if (sensor.integrationFormula()) time["formula"] = sensor.integrationFormula();
-
-  if (sensor.timeType() == TimeType::TIME_FORMULA) {
-    time["type"] = F("formula");
-    JsonArray params = time.createNestedArray("params");
-    for (uint8_t i = 0; i < sensor.timeParamCount(); i++) {
-      JsonObject p = params.createNestedObject();
-      p["key"]   = sensor.timeParamKey(i);
-      p["label"] = sensor.timeParamLabel(i);
-      p["min"]   = sensor.timeParamMin(i);
-      p["max"]   = sensor.timeParamMax(i);
-    }
-  } else {
-    time["type"] = F("presets");
-    JsonArray presets = time.createNestedArray("presets");
-    for (uint8_t i = 0; i < sensor.timePresetCount(); i++) presets.add(sensor.timePresetLabel(i));
+  Serial.print(F(",\"time\":{\"currentMs\":"));
+  Serial.print(sensor.integrationTimeMs());
+  if (sensor.integrationFormula()) {
+    Serial.print(F(",\"formula\":"));
+    printQuoted(sensor.integrationFormula());
   }
+  if (sensor.timeType() == TimeType::TIME_FORMULA) {
+    Serial.print(F(",\"type\":\"formula\",\"params\":["));
+    for (uint8_t i = 0; i < sensor.timeParamCount(); i++) {
+      if (i) Serial.print(',');
+      Serial.print(F("{\"key\":\""));
+      Serial.print(sensor.timeParamKey(i));
+      Serial.print(F("\",\"label\":"));
+      printQuoted(sensor.timeParamLabel(i));
+      Serial.print(F(",\"min\":"));
+      Serial.print(sensor.timeParamMin(i));
+      Serial.print(F(",\"max\":"));
+      Serial.print(sensor.timeParamMax(i));
+      Serial.print('}');
+    }
+    Serial.print(']');
+  } else {
+    Serial.print(F(",\"type\":\"presets\",\"presets\":["));
+    for (uint8_t i = 0; i < sensor.timePresetCount(); i++) {
+      if (i) Serial.print(',');
+      printQuoted(sensor.timePresetLabel(i));
+    }
+    Serial.print(']');
+  }
+  Serial.print('}');
 
   // Extra sensor-specific parameters
   if (sensor.extraParamCount() > 0) {
-    JsonArray extras = doc.createNestedArray("extraParams");
+    Serial.print(F(",\"extraParams\":["));
     for (uint8_t i = 0; i < sensor.extraParamCount(); i++) {
+      if (i) Serial.print(',');
       ExtraParamInfo ep = sensor.extraParam(i);
-      JsonObject e = extras.createNestedObject();
-      e["key"]   = ep.key;
-      e["label"] = ep.label;
+      Serial.print(F("{\"key\":\""));
+      Serial.print(ep.key);
+      Serial.print(F("\",\"label\":"));
+      printQuoted(ep.label);
       if (ep.options) {
-        e["type"] = F("select");
-        JsonArray opts = e.createNestedArray("options");
-        for (uint8_t j = 0; j < ep.optionCount; j++) opts.add(Utils::flashStr((const char* const*)ep.options, j));
+        Serial.print(F(",\"type\":\"select\",\"options\":["));
+        for (uint8_t j = 0; j < ep.optionCount; j++) {
+          if (j) Serial.print(',');
+          printQuoted(Utils::flashStr((const char* const*)ep.options, j));
+        }
+        Serial.print(']');
       } else {
-        e["type"] = F("number");
-        e["min"]  = ep.numMin;
-        e["max"]  = ep.numMax;
+        Serial.print(F(",\"type\":\"number\",\"min\":"));
+        Serial.print(ep.numMin);
+        Serial.print(F(",\"max\":"));
+        Serial.print(ep.numMax);
       }
+      Serial.print('}');
     }
+    Serial.print(']');
   }
 
-  sendJson(doc);
+  Serial.print(F("}\n"));
 }
 
 // -----------------------------------------------------------------------------
