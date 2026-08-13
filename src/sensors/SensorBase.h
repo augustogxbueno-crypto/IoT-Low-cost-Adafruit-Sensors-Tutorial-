@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // This is the ONLY thing core/ knows about sensors. It never includes a
 // specific Adafruit/vendor library or references a specific sensor by name.
-// If you're adding sensor #10 to this project, this is the file that tells
+// If you're adding sensor #11 to this project, this is the file that tells
 // you exactly what to implement — see any file in sensors/ for an example.
 //
 // Design notes (why the interface looks the way it does):

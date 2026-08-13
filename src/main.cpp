@@ -14,6 +14,7 @@
 #include <Wire.h>
 #include "core/Pins.h"
 #include "core/SensorManager.h"
+#include "core/Measurement.h"
 #include "core/Protocol.h"
 
 // Fixed-size line buffer for incoming Serial commands — no String class, so
@@ -43,6 +44,22 @@ void setup() {
       delay(1000);
     }
   }
+
+  // Measurement::mode defaults to REFLECTANCE at compile time, but that's
+  // only a valid default for sensors that can actually drive their own LED
+  // (LedType != LED_NONE) — the web UI's default mode tab mirrors this same
+  // rule (see Protocol.cpp's sendInfo(): "reflectance" is only the first
+  // entry in modes[] when the sensor has an LED). For a photodiode sensor
+  // with no LED, both sides should default to ABSORBANCE instead, so pick
+  // whichever matches what sendInfo() will actually report, then physically
+  // apply it — otherwise the sensor's internal LED (or the external
+  // Absorbance LED, for LED-less sensors) sits in the vendor library's own
+  // power-on-default state, invisibly out of sync with what the UI displays
+  // as active, until the user manually re-clicks a mode tab.
+  bool hasReflectance = SensorManager::get().ledType() != LedType::LED_NONE;
+  Measurement::setMode(hasReflectance ? Measurement::Mode::REFLECTANCE
+                                       : Measurement::Mode::ABSORBANCE);
+  Protocol::syncOutputsForMode();
 }
 
 void loop() {

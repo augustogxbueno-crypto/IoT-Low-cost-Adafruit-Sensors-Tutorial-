@@ -41,6 +41,13 @@
   constexpr uint8_t INFO_MAX_TIME_PRESETS = 6;
   constexpr uint8_t INFO_MAX_EXTRA_PARAMS = 0;
   constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 0;
+#elif defined(SENSOR_APDS9960)
+  constexpr uint8_t INFO_MAX_CHANNELS = 6; // 4 raw (R,G,B,C) + 2 derived (colorTemp, lux)
+  constexpr uint8_t INFO_MAX_GAINS    = 4;
+  constexpr uint8_t INFO_MAX_TIME_PARAMS  = 1;
+  constexpr uint8_t INFO_MAX_TIME_PRESETS = 0;
+  constexpr uint8_t INFO_MAX_EXTRA_PARAMS = 0;
+  constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 0;
 #elif defined(SENSOR_BH1750)
   constexpr uint8_t INFO_MAX_CHANNELS = 1;
   constexpr uint8_t INFO_MAX_GAINS    = 1; // continuous gain, array unused
@@ -77,11 +84,6 @@
   constexpr uint8_t INFO_MAX_EXTRA_PARAMS = 3;
   constexpr uint8_t INFO_MAX_EXTRA_OPTS   = 6;
 #endif
-
-// NOTE: there used to be an INFO_DOC_CAPACITY here sizing a StaticJsonDocument
-// for the whole "info" response. sendInfo() now streams that response
-// directly to Serial instead (see below) — building it as one in-memory
-// document was what overflowed the stack on RAM-tight sensors like AS7262.
 
 constexpr size_t CMD_DOC_CAPACITY =
     JSON_OBJECT_SIZE(6) + JSON_ARRAY_SIZE(INFO_MAX_CHANNELS) + JSON_OBJECT_SIZE(INFO_MAX_TIME_PARAMS) + 64;
@@ -122,12 +124,15 @@ static void sendAck(const char* cmd, float tintMs = -1) {
 // -----------------------------------------------------------------------------
 // LED application: decides, from the current mode + the active sensor's
 // ledType(), what the sensor's own LED and the two fixed external LEDs
-// should be doing right now.
+// should be doing right now. Declared in Protocol.h (not static) because
+// main.cpp calls it once at boot, in addition to the "set_mode" handler
+// below calling it on every mode change — see Protocol.h for why the boot
+// call matters.
 // -----------------------------------------------------------------------------
 static int     g_ledMA  = 20;
 static uint8_t g_ledIdx = 0;
 
-static void applyLedForMode() {
+void syncOutputsForMode() {
   SensorBase& sensor = SensorManager::get();
 
   if (Measurement::mode == Measurement::Mode::REFLECTANCE) {
@@ -386,7 +391,7 @@ void handleCommand(const char* line) {
     else if (strcmp(m, "absorbance")   == 0) Measurement::setMode(Measurement::Mode::ABSORBANCE);
     else if (strcmp(m, "fluorescence") == 0) Measurement::setMode(Measurement::Mode::FLUORESCENCE);
     else { sendError(F("Unknown mode")); return; }
-    applyLedForMode();
+    syncOutputsForMode();
     sendAck("set_mode");
 
   } else if (strcmp(cmd, "set_submode") == 0) {

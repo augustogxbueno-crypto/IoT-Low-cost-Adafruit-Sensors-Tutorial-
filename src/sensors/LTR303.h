@@ -6,11 +6,8 @@
 // and the same Adafruit_LTR329_LTR303 library file, just two different
 // classes (Adafruit_LTR303 / Adafruit_LTR329) with the same method surface.
 // LTR329.h/.cpp is intentionally a near-duplicate of this file rather than a
-// template, because the two vendor classes aren't polymorphic to each other
-// and this project's build can't compile-test against the real library (see
-// README.md). If you've verified on real hardware that templating the two
-// together works, that's a good future refactor — SensorBase.h won't need
-// to change either way.
+// template, because the two vendor classes aren't polymorphic to each other.
+// SensorBase.h doesn't need to change either way if you later merge them.
 class LTR303Sensor : public SensorBase {
  public:
   bool begin() override;

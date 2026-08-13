@@ -25,6 +25,9 @@
 #elif defined(SENSOR_TCS34725)
   #include "../sensors/TCS34725.h"
   using ActiveSensor = TCS34725Sensor;
+#elif defined(SENSOR_APDS9960)
+  #include "../sensors/APDS9960.h"
+  using ActiveSensor = APDS9960Sensor;
 #elif defined(SENSOR_BH1750)
   #include "../sensors/BH1750.h"
   using ActiveSensor = BH1750Sensor;
